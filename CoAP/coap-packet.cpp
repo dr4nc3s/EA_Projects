@@ -2,29 +2,27 @@
 #include "coap-packet.h"
 
 CoapPacket::CoapPacket() {
+	//parser = new Parser();
 	//packetBuffer = NULL;
 }
 
 CoapPacket::~CoapPacket() {
+	//delete parser;
 	//if (packetBuffer != NULL) // this was == but shouldn't it be != ?
 		//delete[] packetBuffer;
 }
 
 int CoapPacket::begin() {
-	//if (!packetBuffer)
-	//		packetBuffer = new uns8[MAX_SIZE];
-	//else
-	//	return 0;
-	//return 1;
-	Serial.println("in packet begin");
 	index = 0;
 	hdrIndex = index;
 	tknIndex = 0;
 	payloadIndex = 0;
 	optionIndex = 0;
+	parser = 0;
 	
 	lastOptionNumber = 0;
 	numOptions = 0;
+	return 1;
 }
 
 int CoapPacket::addHeader(uns8 type, uns8 code, int id) {
@@ -41,7 +39,7 @@ int CoapPacket::addTokens(int tokenLength, uns8 *tokenValue) {
 	tknIndex = index;	// we already know this is going to be byte position 4, but hey
 	packetBuffer[hdrIndex] = (packetBuffer[hdrIndex] & 0xF0) | (uns8)tokenLength;
 	for (int i = 0; i < tokenLength; i++) {
-		packetBuffer[index++] = tokenValue[i];
+		packetBuffer[index++] = *tokenValue++;
 	}
 	return (index > MAX_SIZE) ? 0 : 1;
 
@@ -128,50 +126,71 @@ int	CoapPacket::collectPacket(uns8 *rx, int len) {
 		}
 		packetBuffer[index++] = '\0';
 		packetLength = index;
-		//Serial.print("Packetlength is");
-	//Serial.print(index);
-	//Serial.println(packetLength);
 	}
 	return 1;	
 }
 
 int CoapPacket::parsePacket() {
-	Serial.println("Rgith befpre a new parser is made");
-	packetLength = index;
-	parser = new Parser();
-	Serial.println("in parse packet.");
-	Serial.print("packet length ");
-	Serial.println(packetLength);
-	if (!parser->begin(&packetBuffer[0], packetLength))
-		return 0;
-	parser->parseHeader();
-	hdrIndex = 0;
-	parser->parseTokens();
-	tknIndex = parser->getTokenIndex();
-	parser->parsePayload();
-	optionStartIndex = parser->getOptionIndex();
-	numOptions = parser->getOptionCount();
-	payloadIndex = parser->getPayloadIndex();
-	packetLength = parser->getPacketLength();
-	parser->end();
-	delete parser;
-	return 1;
-}
-
-int CoapPacket::end() {
-	// no need for this now:
-	index = 0;
-	hdrIndex = 0;
-	tknIndex = 0;
-	payloadIndex = 0;
+	int tokenLength = 0, lastDelta = 0;
+	parser = 0;
 	optionIndex = 0;
-	//packetBuffer = NULL;
+	optionStartIndex = 0;
+	payloadIndex = 0;
+	tknIndex = 0;
+	hdrIndex = 0;
+	numOptions = 0;
+	//Find out if there are tokens (length 1 - 8)
+	if (((packetBuffer[0] & 0x0F) > 0) && ((packetBuffer[0] & 0x0F) < 9)) {
+		tokenLength = packetBuffer[0] & 0x0F;
+		tknIndex = 4;
+	}
+	parser = 4;
+	/*for (int i = 0; i < tokenLength; i++) {
+		parser++;
+	}*/
+	parser += tokenLength;
+	//Now, parser should be after tokens
+	while (parser < packetLength) {
+		if (packetBuffer[parser] != PAYLOAD) {
+			if (optionStartIndex == 0)
+				optionStartIndex = parser;
+			uns8 optionHdr = packetBuffer[parser];
+			uns16 delta = (optionHdr >> 4) & 0x000F;
+			uns16 len = optionHdr & 0x000F;
+			if (delta == 13) {
+				parser++;
+				delta = packetBuffer[parser] + 13;
+			}
+			else if (delta == 14) {
+				parser++;
+				delta = ((packetBuffer[parser++] << 8) | (packetBuffer[parser])) + 269;
+			}
+			lastDelta += delta;
+			delta = lastDelta;
+			if (len == 13) {
+				parser++;
+				len = packetBuffer[parser] + 13;
+			}
+			else if (len == 14) {
+				parser++;
+				len = ((packetBuffer[parser++] << 8) | (packetBuffer[parser])) + 269;
+			}			
+			parser++;
+			parser += len;
+			numOptions++;
+		}
+		else {
+			payloadIndex = parser;
+			parser = packetLength;
+		}
+	}
+	return 1;
 }
 
 uns8* CoapPacket::getPacket() {
 	if (!packetBuffer)
 		return 0;
-	return packetBuffer;
+	return &packetBuffer[0];
 }
 
 int CoapPacket::getPacketLength() {
@@ -208,19 +227,25 @@ uns8 CoapPacket::getResponseCode() {
 	return packetBuffer[hdrIndex + 1];
 }
 
+uns8 CoapPacket::getTokenLength() {
+	return (packetBuffer[hdrIndex] & 0x0F);
+}
+
 uns8* CoapPacket::getTokens() {
 	int len = packetBuffer[hdrIndex] & 0x0F;
 	if ((len == 0) || (len > 8))
 		return 0;
-	uns8 tkns[len];
+	/*uns8 tkns[len];
 	for (int i = 0; i < len; i++) {
 		tkns[i] = packetBuffer[tknIndex + i];
 	}
-	return &tkns[0];
+	return &tkns[0];*/
+	else
+		return &packetBuffer[4];
 }
 
 uns16 CoapPacket::getID() {
-	return ((uns16)(packetBuffer[3] << 8) | ((uns16)packetBuffer[4] & 0x00FF));
+	return ((uns16)(packetBuffer[2] << 8) | ((uns16)packetBuffer[3] & 0x00FF));
 }
 
 uns8* CoapPacket::getPayloadAddr() {
@@ -267,13 +292,14 @@ void CoapPacket::printHeader() {
 void CoapPacket::printTokens() {
 	int tokenLength = packetBuffer[0] & 0x0F;
 	if (tokenLength > 0) {
-		Serial.print("\n------TOKENS------\n");
+		Serial.print("------TOKENS------\n");
 		Serial.print("Token length:\t");
 		Serial.println(tokenLength);
 		for (int i = 0; i < tokenLength; i++) {
 			Serial.print(packetBuffer[i + 4], HEX);
 			Serial.print(" ");
 		}
+		Serial.println();
 	}
 	else
 		Serial.print("\n----NO TOKENS----\n");
@@ -315,8 +341,21 @@ void CoapPacket::printOptions() {
 		for (int i = 0; i < len; i++) {
 			Serial.print((char)packetBuffer[index++]);
 			//index++;
-		}	
+		}
+		Serial.println();		
 	}
+}
+
+void CoapPacket::printPayload() {
+	if (payloadIndex > 0) {
+		Serial.println("----PAYLOAD----");
+		for (int i = payloadIndex; i < packetLength; i++) {
+			Serial.print((char)packetBuffer[i]);
+		}
+		Serial.println();
+	}
+	else
+		Serial.println("----NO PAYLOAD----");
 }
 
 int CoapPacket::readPacket() {
@@ -324,9 +363,17 @@ int CoapPacket::readPacket() {
 	printTokens();
 	if (numOptions > 0)
 		printOptions();
+	else
+		Serial.println("----NO OPTIONS----");
+	printPayload();
 	return 1;
 }
 
+void CoapPacket::setIndex(int i) {
+	packetBuffer[i] = '\0';
+	this->index = i;
+	this->packetLength = index;
+}
 /*
 Serial.println("Testing index counts");
 	Serial.print("Header Index:\t");

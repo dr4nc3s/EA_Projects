@@ -20,6 +20,7 @@ void setup() {
   Serial.println("2 - make PING packet");
   Serial.println("3 - print packet");
   Serial.println("4 - test packet");
+  Serial.println("5 - print human-readable packet");
 }
 
 void loop() {
@@ -29,7 +30,6 @@ void loop() {
       case '1': createNewPacket(); break;
       case '2': createPING(); break;
       case '3': {
-        
         Serial.print("\nPacket Length: ");
         Serial.println(tx.getPacketLength());
         tx.printPacket();
@@ -68,7 +68,6 @@ void testPackets() {
 }
 
 void createNewPacket() {
-  Serial.println("MAking GET");
   String body = "testing payload";
   tx.begin();
   tx.addHeader(TYPE_CON, COAP_GET, 13456);
@@ -80,7 +79,7 @@ void createNewPacket() {
 }
 
 void createPING() {
-  Serial.println("MAking PING");
+  Serial.println("Making PING");
   tx.begin();
   tx.addHeader(TYPE_CON, COAP_PING, 13460);
   Serial.println("In ping, before parse");
