@@ -4,4 +4,4 @@ Noisy Clock uses the number reels from old pinball machines, the FDRV-04S Motor/
 
 Lightning Detector Display uses the Nokia5110 LCD and the MOD1016 Lightning Detector to display current sensor readings.
 
-Currently working on implementing an Arduino-compatible CoAP protocol that can also run on the ESP8266. 
+CoAP implementation, targetting the ESP8266, has been moved to Embedded Adventures' Github.
